@@ -22,6 +22,7 @@
 .Rproj.user/
 
 # produced vignettes
+*.html
 vignettes/*.html
 vignettes/*.pdf
 
@@ -47,3 +48,7 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# targets files
+_targets/
+*_files/

@@ -1,0 +1,104 @@
+---
+title: "{targets} tutorial"
+subtitle: for BDS Shanghai UseR Group
+format:
+  html:
+    toc: false
+execute: 
+  echo: true
+  warning: false
+---
+
+# What is `{targets}` and why should we use it?
+
+[`{targets}` is a pipeline tool](https://github.com/ropensci/targets) for statistics and data science in R. Pipeline tools are good for coordinating various pieces of code together. 
+
+Primarily, the tool helps you skip over data processing and analysis steps
+that are already up to date. An analysis step, or target, is up to date when its
+code, data, and dependencies have not changed since the last run of the pipeline.
+
+This saves time, of course, but also gives assurance that the results of the analysis are reproducible. 
+
+If all the targets are up to date, then you know the results are more trustworthy.
+
+`{targets}` also allows us to run analyses in parallel easily, saving time
+with computationally intensive tasks.
+
+# Data analysis without `{targets}`
+
+Let us first look at a simple data analysis project without using `{targets}`.
+
+We will use ADaM data from Roche's NEST project. 
+
+```{r}
+library(tidyverse)
+library(random.cdisc.data)
+
+adsl <- random.cdisc.data::radsl(seed = 42)
+adrs <- random.cdisc.data::radrs(adsl = adsl)
+```
+
+Then, prepare the data for a simple analysis.
+
+```{r}
+# Data Prep
+response_table <- adrs %>%
+  group_by(SUBJID) %>%
+  filter(PARAMCD == "BESRSPI") %>%
+  mutate(
+    ARM_BIN = ifelse(ARMCD == "ARM B", 0, 1), #Placebo = 0; Tx = 1
+    ARM_BIN = factor(ARM_BIN, levels = c(0, 1), labels = c("Placebo", "Treatment")),
+    AVAL_BIN = ifelse(AVAL == 1, 1, 0) #1 = Better; >1 = Worse
+  ) %>%
+  select(SUBJID, ARM_BIN, AVAL_BIN, ARM, AVAL)
+
+# Data Analysis
+glm_result <- glm(AVAL_BIN ~ ARM_BIN, data = response_table)
+summary(glm_result)
+```
+
+Then, visualize the response and AEs.
+
+```{r}
+# Plot Response
+ggplot(
+  response_table, 
+  aes(
+    x = AVAL, 
+    fill = factor(ARM, levels = c("C: Combination", "A: Drug X", "B: Placebo")))
+) +
+  geom_bar(position = "fill") +
+  labs(
+    title = "Distribution of Outcome across Treatment Groups",
+    x = "Best Response", y = "Proportion", fill = "Treatment"
+  ) + theme_minimal()
+
+# Plot AEs
+ae_plot_data <- adrs %>% 
+  group_by(ARM) %>% 
+  mutate(AEWITHFL_B = ifelse(AEWITHFL == "N", FALSE, TRUE)) %>% 
+  summarise(ae_prop = sum(AEWITHFL_B) / n())
+
+ggplot(ae_plot_data, aes(x = ARM, y = ae_prop, fill = ARM)) +
+  geom_col(show.legend = F) + scale_y_continuous(limits = c(0.0, 0.25)) +
+  labs(
+    title = "Proportion of AE leading to Drug Withdrawl by Treatment", 
+    x = "Treatment Group", y = "Proportion"
+  ) + theme_minimal()
+
+```
+
+# Data analysis with `{targets}`
+
+Data analysis projects done with `{targets}` take a particular form. 
+
+1. Create an `R/` folder in our project and store our code there.
+
+It is important that you split your code up into functions. Each function will
+define a target in the pipeline. 
+
+2. Next, run `use_targets()`. This will write all the key files, including
+the `_targets.R` file.
+
+3. Run the pipeline with `tar_make()` and read output with `tar_read()`. You can
+also visualize the pipeline with `tar_visnetwork`.
